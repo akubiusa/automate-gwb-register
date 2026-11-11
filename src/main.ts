@@ -1,17 +1,17 @@
 import { Octokit } from '@octokit/rest'
 import { Logger } from '@book000/node-utils'
 
-/** 既知の GitHub Webhook Bridge ホスティング先 URL 一覧（レガシー Webhook 移行検出用） */
+/** Known GitHub Webhook Bridge host URLs, used to detect legacy webhooks for migration. */
 const KNOWN_GWB_BASE_URLS = [
   'https://github-webhook-bridge.vercel.app/',
   'https://gwb.tomacheese.com/',
 ]
 
 /**
- * Webhook の URL からオリジン (scheme + host) を取得する。
- * 末尾スラッシュの有無等の表記ゆれに影響されず、ホストの同一性を判定するために使用する。
- * @param hookUrl - Webhook の config.url (未設定の場合もある)
- * @returns オリジン文字列。URL として不正、または未設定の場合は null
+ * Returns the origin (scheme + host) of a webhook URL.
+ * Used to compare hosts regardless of trailing slashes and similar notation differences.
+ * @param hookUrl - The webhook's config.url (may be unset)
+ * @returns The origin string, or null if the URL is unset or invalid
  */
 function getHookOrigin(hookUrl: string | undefined): string | null {
   if (!hookUrl) {
@@ -27,7 +27,6 @@ function getHookOrigin(hookUrl: string | undefined): string | null {
 async function main() {
   const logger = Logger.configure('main')
 
-  // environment variables
   const discordWebhookUrl = process.env.DISCORD_WEBHOOK_URL
   const webhookSecret = process.env.WEBHOOK_SECRET
   const personalAccessToken = process.env.PERSONAL_ACCESS_TOKEN
@@ -59,7 +58,6 @@ async function main() {
     KNOWN_GWB_BASE_URLS.map((knownBaseUrl) => new URL(knownBaseUrl).origin)
   )
 
-  // URLの比較モード (ベースURL一致、または完全一致)
   const checkMode = process.env.GWB_CHECK_MODE ?? 'BASE_URL'
   if (!['BASE_URL', 'FULL_URL'].includes(checkMode)) {
     logger.error('❌ GWB_CHECK_MODE is invalid. Must be BASE_URL or FULL_URL')
@@ -67,7 +65,7 @@ async function main() {
     return
   }
 
-  // 設定情報の表示
+  // Credentials and webhook URLs are logged in plain text on purpose (to check the configuration)
   logger.info('🔧 Configuration')
   logger.info(`  DISCORD_WEBHOOK_URL: ${discordWebhookUrl}`)
   logger.info(`  WEBHOOK_SECRET: ${webhookSecret}`)
@@ -89,7 +87,6 @@ async function main() {
     per_page: 100,
   })
 
-  // アーカイブとフォークを除外 (オリジナルのリポジトリのみ)
   const filteredRepos = repos.filter(
     (repo) => repo.archived === false && !repo.fork
   )
@@ -103,8 +100,8 @@ async function main() {
       per_page: 100,
     })
 
-    // 既知の旧ホスト URL に一致し、現在の baseUrl とは異なる Webhook をレガシーとみなし削除する
-    // (GWB_CHECK_MODE の値に関わらず常に実行する)
+    // A webhook on a known host other than the current baseUrl is legacy and is always deleted,
+    // regardless of GWB_CHECK_MODE.
     const legacyHooks = hooks.filter((hook) => {
       const hookOrigin = getHookOrigin(hook.config.url)
       return (
@@ -124,7 +121,7 @@ async function main() {
       })
     }
 
-    // レガシー Webhook を除いた残りの一覧で、以降の判定・削除処理を行う
+    // The checks below use only the hooks that were not removed as legacy
     const legacyHookIds = new Set(legacyHooks.map((hook) => hook.id))
     const remainingHooks = hooks.filter((hook) => !legacyHookIds.has(hook.id))
 
@@ -134,12 +131,10 @@ async function main() {
         : hook.config.url?.startsWith(baseUrl)
     )
     if (filteredHooks.length > 0) {
-      // already exists, skip
       logger.info('⏭️ Webhook already exists, skip')
       continue
     }
 
-    // FULL_URL モードの場合、BASE_URL で始まる Webhook を削除
     if (checkMode === 'FULL_URL') {
       const baseHooks = remainingHooks.filter(
         (hook) =>
@@ -155,7 +150,6 @@ async function main() {
       }
     }
 
-    // create webhook
     await octokit.rest.repos.createWebhook({
       owner: repo.owner.login,
       repo: repo.name,
