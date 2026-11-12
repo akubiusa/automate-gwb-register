@@ -62,10 +62,12 @@ async function main() {
 
   logger.info(`👤 Authenticated as ${authenticatedUser.data.login}`)
 
-  const repos = await octokit.paginate(octokit.rest.repos.listForUser, {
-    username: authenticatedUser.data.login,
-    per_page: 100,
-  })
+  const repos = await octokit.paginate(
+    octokit.rest.repos.listForAuthenticatedUser,
+    {
+      per_page: 100,
+    }
+  )
 
   for (const repo of filterTargetRepositories(repos)) {
     logger.info(`📦 ${repo.full_name}`)

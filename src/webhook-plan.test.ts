@@ -242,11 +242,33 @@ describe('planWebhookActions', () => {
 })
 
 describe('filterTargetRepositories', () => {
+  const admin = { admin: true }
+
   it('keeps only non-archived, non-fork repositories', () => {
-    const active = { name: 'active', archived: false, fork: false }
-    const archived = { name: 'archived', archived: true, fork: false }
-    const forked = { name: 'forked', archived: false, fork: true }
-    const both = { name: 'both', archived: true, fork: true }
+    const active = {
+      name: 'active',
+      archived: false,
+      fork: false,
+      permissions: admin,
+    }
+    const archived = {
+      name: 'archived',
+      archived: true,
+      fork: false,
+      permissions: admin,
+    }
+    const forked = {
+      name: 'forked',
+      archived: false,
+      fork: true,
+      permissions: admin,
+    }
+    const both = {
+      name: 'both',
+      archived: true,
+      fork: true,
+      permissions: admin,
+    }
     expect(filterTargetRepositories([active, archived, forked, both])).toEqual([
       active,
     ])
@@ -254,7 +276,32 @@ describe('filterTargetRepositories', () => {
 
   it('excludes repositories whose archived flag is not explicitly false', () => {
     expect(
-      filterTargetRepositories([{ name: 'unknown', fork: false }])
+      filterTargetRepositories([
+        { name: 'unknown', fork: false, permissions: admin },
+      ])
     ).toEqual([])
+  })
+
+  it('keeps only repositories on which the user has admin permission', () => {
+    const owned = {
+      name: 'owned',
+      archived: false,
+      fork: false,
+      permissions: admin,
+    }
+    const pushOnly = {
+      name: 'push-only',
+      archived: false,
+      fork: false,
+      permissions: { admin: false },
+    }
+    const noPermissions = {
+      name: 'no-permissions',
+      archived: false,
+      fork: false,
+    }
+    expect(filterTargetRepositories([owned, pushOnly, noPermissions])).toEqual([
+      owned,
+    ])
   })
 })

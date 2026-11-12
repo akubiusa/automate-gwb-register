@@ -30,12 +30,19 @@ export function getHookOrigin(hookUrl: string | undefined): string | null {
 /**
  * Keeps only the repositories that webhooks may be registered on.
  * @param repos - Repositories as returned by the GitHub API
- * @returns The repositories that are explicitly not archived and not forks
+ * @returns The repositories that are explicitly not archived, not forks, and administrable by the token's user (managing webhooks requires admin permission)
  */
 export function filterTargetRepositories<
-  R extends { archived?: boolean; fork?: boolean },
+  R extends {
+    archived?: boolean
+    fork?: boolean
+    permissions?: { admin?: boolean }
+  },
 >(repos: R[]): R[] {
-  return repos.filter((repo) => repo.archived === false && !repo.fork)
+  return repos.filter(
+    (repo) =>
+      repo.archived === false && !repo.fork && repo.permissions?.admin === true
+  )
 }
 
 /**
