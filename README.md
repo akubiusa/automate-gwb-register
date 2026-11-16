@@ -22,6 +22,8 @@ DISCORD_WEBHOOK_URL=... PERSONAL_ACCESS_TOKEN=... WEBHOOK_SECRET=... pnpm start
 
 `pnpm dev` runs the same entry point (`src/main.ts`) in watch mode.
 
+The process exits with code 0 only if every targeted repository was processed without error. If a repository fails (for example an API 403), the remaining repositories are still processed, a failure summary is logged, and the process exits with code 1. A failure during setup (authentication or listing repositories) also exits with code 1.
+
 The script modifies webhooks on real repositories. The repositories are listed with the user of `PERSONAL_ACCESS_TOKEN`, so use a token with permission to manage repository webhooks. Private repositories are processed only if the token can access them (a classic token with the `repo` scope, or a fine-grained token with access to them).
 
 The scheduled workflow `.github/workflows/auto-register.yml` runs it hourly (and on manual dispatch) using the repository secrets `DISCORD_WEBHOOK_URL`, `WEBHOOK_SECRET`, `PERSONAL_ACCESS_TOKEN` and `GWB_QUERY`. In that workflow an unset or empty `GWB_QUERY` secret is not passed to the app, so the default `?url={url}` is used.
