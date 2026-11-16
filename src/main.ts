@@ -1,6 +1,7 @@
 import { Octokit } from '@octokit/rest'
 import { Logger } from '@book000/node-utils'
 import { loadConfig } from './config'
+import { processEach } from './process-each'
 import {
   filterTargetRepositories,
   getHookOrigin,
@@ -69,60 +70,75 @@ async function main() {
     }
   )
 
-  for (const repo of filterTargetRepositories(repos)) {
-    logger.info(`📦 ${repo.full_name}`)
+  const failures = await processEach(
+    filterTargetRepositories(repos),
+    async (repo) => {
+      logger.info(`📦 ${repo.full_name}`)
 
-    const hooks = await octokit.paginate(octokit.rest.repos.listWebhooks, {
-      owner: repo.owner.login,
-      repo: repo.name,
-      per_page: 100,
-    })
-
-    const plan = planWebhookActions(hooks, { url, baseUrl, checkMode })
-
-    for (const hook of plan.legacyHooks) {
-      logger.info(
-        `🚮 Remove legacy webhook (hook_id=${hook.id}, origin=${getHookOrigin(hook.config.url)})`
-      )
-      await octokit.rest.repos.deleteWebhook({
+      const hooks = await octokit.paginate(octokit.rest.repos.listWebhooks, {
         owner: repo.owner.login,
         repo: repo.name,
-        hook_id: hook.id,
+        per_page: 100,
       })
-    }
 
-    if (plan.alreadyRegistered) {
-      logger.info('⏭️ Webhook already exists, skip')
-      continue
-    }
+      const plan = planWebhookActions(hooks, { url, baseUrl, checkMode })
 
-    for (const hook of plan.staleHooks) {
-      logger.info(`🚮 Remove webhook (hook_id=${hook.id})`)
-      await octokit.rest.repos.deleteWebhook({
+      for (const hook of plan.legacyHooks) {
+        logger.info(
+          `🚮 Remove legacy webhook (hook_id=${hook.id}, origin=${getHookOrigin(hook.config.url)})`
+        )
+        await octokit.rest.repos.deleteWebhook({
+          owner: repo.owner.login,
+          repo: repo.name,
+          hook_id: hook.id,
+        })
+      }
+
+      if (plan.alreadyRegistered) {
+        logger.info('⏭️ Webhook already exists, skip')
+        return
+      }
+
+      for (const hook of plan.staleHooks) {
+        logger.info(`🚮 Remove webhook (hook_id=${hook.id})`)
+        await octokit.rest.repos.deleteWebhook({
+          owner: repo.owner.login,
+          repo: repo.name,
+          hook_id: hook.id,
+        })
+      }
+
+      await octokit.rest.repos.createWebhook({
         owner: repo.owner.login,
         repo: repo.name,
-        hook_id: hook.id,
+        name: 'web',
+        config: {
+          url,
+          content_type: 'json',
+          secret: webhookSecret,
+        },
+        events: ['*'],
       })
+
+      logger.info('🚀 Webhook created')
     }
+  )
 
-    await octokit.rest.repos.createWebhook({
-      owner: repo.owner.login,
-      repo: repo.name,
-      name: 'web',
-      config: {
-        url,
-        content_type: 'json',
-        secret: webhookSecret,
-      },
-      events: ['*'],
-    })
-
-    logger.info('🚀 Webhook created')
+  if (failures.length > 0) {
+    logger.error(`❌ Failed to process ${failures.length} repository(ies)`)
+    for (const { item, error } of failures) {
+      const message = error instanceof Error ? error.message : String(error)
+      logger.error(`❌ ${item.full_name}: ${message}`)
+    }
+    process.exitCode = 1
+    return
   }
 
   logger.info('✅ Done')
 }
 
-;(async () => {
-  await main()
-})()
+main().catch((error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error)
+  Logger.configure('main').error(`❌ Unexpected error: ${message}`)
+  process.exitCode = 1
+})
